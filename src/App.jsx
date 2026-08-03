@@ -1,92 +1,78 @@
 import React, { useState, useEffect } from 'react';
 import ExpenseForm from './components/ExpenseForm';
 import ExpenseList from './components/ExpenseList';
+import SummaryDashboard from './components/SummaryDashboard';
+import HouseholdManager from './components/HouseholdManager';
 
 function App() {
   const [expenses, setExpenses] = useState([]);
-  const [editingExpense, setEditingExpense] = useState(null);
+  const [activeHousehold, setActiveHousehold] = useState(null);
+  const currentUserId = 1; // Temporary Demo User ID
 
+  // 1. Fetch Expenses (Personal vs Household)
   const fetchExpenses = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/expenses');
-      if (response.ok) {
-        const data = await response.json();
+      const url = activeHousehold 
+        ? `/api/expenses?householdId=${activeHousehold}&userId=${currentUserId}`
+        : `/api/expenses`;
+
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
         setExpenses(data);
       }
-    } catch (error) {
-      console.error("Error fetching expenses:", error);
+    } catch (err) {
+      console.error('Error fetching expenses:', err);
     }
   };
 
+  // Run fetch whenever activeHousehold changes
   useEffect(() => {
     fetchExpenses();
-  }, []);
+  }, [activeHousehold]);
 
-  const handleSaveExpense = async (expenseData) => {
+  // 2. Add New Expense
+  const handleAddExpense = async (expenseData) => {
     try {
-      let response;
-      if (editingExpense) {
-        response = await fetch(`http://localhost:5000/api/expenses/${editingExpense.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(expenseData)
-        });
-        setEditingExpense(null);
-      } else {
-        response = await fetch('http://localhost:5000/api/expenses', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(expenseData)
-        });
-      }
+      const payload = {
+        ...expenseData,
+        householdId: activeHousehold,
+        userId: currentUserId
+      };
 
-      if (response.ok) {
-        fetchExpenses(); // Re-fetch expenses from database instantly
-      } else {
-        alert("Failed to save data on server. Make sure server is running.");
-      }
-    } catch (error) {
-      console.error("Error saving expense:", error);
-      alert("Error connecting to server!");
-    }
-  };
-
-  const handleDeleteExpense = async (id) => {
-    try {
-      const response = await fetch(`http://localhost:5000/api/expenses/${id}`, {
-        method: 'DELETE'
+      const res = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
-      if (response.ok) {
-        fetchExpenses();
+
+      if (res.ok) {
+        fetchExpenses(); // Refresh expenses list
       }
-    } catch (error) {
-      console.error("Error deleting expense:", error);
+    } catch (err) {
+      console.error('Error adding expense:', err);
     }
   };
-
-  const totalAmount = expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
   return (
-    <div style={{ padding: '20px', maxWidth: '600px', margin: 'auto', fontFamily: 'sans-serif' }}>
-      <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '10px' }}>Expense Tracker App</h1>
-      
-      <div style={{ padding: '12px', backgroundColor: '#e2e8f0', borderRadius: '8px', marginBottom: '20px', fontWeight: 'bold' }}>
-        Total Expense: Rs. {totalAmount.toFixed(2)}
-      </div>
+    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
+      <h1>SpendWise - Personal & Household Expense Tracker</h1>
 
-      <ExpenseForm 
-        onSave={handleSaveExpense} 
-        editingExpense={editingExpense} 
-        clearEdit={() => setEditingExpense(null)} 
+      {/* Household / Personal Mode Switcher */}
+      <HouseholdManager 
+        activeHousehold={activeHousehold} 
+        setActiveHousehold={setActiveHousehold} 
+        userId={currentUserId} 
       />
 
-      <ExpenseList 
-        expenses={expenses} 
-        onDelete={handleDeleteExpense}
-        onDeleteExpense={handleDeleteExpense} 
-        onEdit={(expense) => setEditingExpense(expense)}
-        onEditExpense={(expense) => setEditingExpense(expense)} 
-      />
+      {/* Expense Input Form */}
+      <ExpenseForm onAddExpense={handleAddExpense} />
+
+      {/* Summary Dashboard */}
+      <SummaryDashboard expenses={expenses} />
+
+      {/* List of Expenses */}
+      <ExpenseList expenses={expenses} onDeleteExpense={fetchExpenses} />
     </div>
   );
 }

@@ -1,38 +1,52 @@
 const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const db = new sqlite3.Database('./database.sqlite');
 
-// Database file ka rasta (path) set karna
-const dbPath = path.resolve(__dirname, 'expenses.db');
+db.serialize(() => {
+  // 1. Existing Expenses Table (Updated with household_id & added_by)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS expenses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      amount REAL NOT NULL,
+      category TEXT NOT NULL,
+      date TEXT NOT NULL,
+      note TEXT,
+      household_id INTEGER,
+      added_by TEXT
+    )
+  `);
 
-// Database se connect hona (agar file nahi hogi to ye khud naye naam se bana dega)
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Database connection error:', err.message);
-    } else {
-        console.log('Connected to the SQLite database successfully.');
-        initializeTables();
-    }
+  // 2. Households Table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS households (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      owner_id INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // 3. Household Members Table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS household_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      household_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      role TEXT CHECK(role IN ('owner', 'member')) DEFAULT 'member',
+      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(household_id) REFERENCES households(id) ON DELETE CASCADE
+    )
+  `);
+
+  // 4. Household Invites Table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS household_invites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      household_id INTEGER NOT NULL,
+      invite_code TEXT UNIQUE NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(household_id) REFERENCES households(id) ON DELETE CASCADE
+    )
+  `);
 });
-
-// Tables banane ka function
-function initializeTables() {
-    // 1. Users Table (Day 3 ke kaam ke liye pehle se bana kar rakh lete hain)
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL
-    )`);
-
-    // 2. Expenses Table (Jis me amount, category, date aur note hoga)
-    db.run(`CREATE TABLE IF NOT EXISTS expenses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        amount REAL NOT NULL,
-        category TEXT NOT NULL,
-        date TEXT NOT NULL,
-        note TEXT,
-        FOREIGN KEY (user_id) REFERENCES users (id)
-    )`);
-}
 
 module.exports = db;

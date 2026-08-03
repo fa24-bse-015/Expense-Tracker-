@@ -2,71 +2,67 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database');
 
-// 1. GET ALL EXPENSES
+// 1. Get Expenses (Personal or Household)
 router.get('/', (req, res) => {
-    const query = `SELECT * FROM expenses ORDER BY date DESC`;
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
+  const { householdId, userId } = req.query;
+
+  if (householdId) {
+    // Check if user belongs to this household
+    const checkMemberQuery = `SELECT role FROM household_members WHERE household_id = ? AND user_id = ?`;
+    
+    db.get(checkMemberQuery, [householdId, userId || 1], (err, member) => {
+      if (err) return res.status(500).json({ error: err.message });
+      
+      // If not a member, return 403 Forbidden error
+      if (!member) {
+        return res.status(403).json({ error: 'Access Denied: You are not a member of this household.' });
+      }
+
+      // Fetch expenses for this household
+      const getHouseholdExpenses = `SELECT * FROM expenses WHERE household_id = ?`;
+      db.all(getHouseholdExpenses, [householdId], (expErr, rows) => {
+        if (expErr) return res.status(500).json({ error: expErr.message });
         res.json(rows);
+      });
     });
+  } else {
+    // Fetch personal expenses
+    const getPersonalExpenses = `SELECT * FROM expenses WHERE household_id IS NULL`;
+    db.all(getPersonalExpenses, [], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows);
+    });
+  }
 });
 
-// 2. ADD NEW EXPENSE (POST)
+// 2. Add New Expense
 router.post('/', (req, res) => {
-    const { amount, category, date, note } = req.body;
+  const { amount, category, date, note, householdId, userId } = req.body;
 
-    if (!amount || isNaN(amount) || amount <= 0) {
-        return res.status(400).json({ error: "Amount must be a positive number." });
-    }
-    if (!category || category.trim() === "") {
-        return res.status(400).json({ error: "Category is required." });
-    }
-    if (!date) {
-        return res.status(400).json({ error: "Date is required." });
-    }
+  if (!amount || !category || !date) {
+    return res.status(400).json({ error: 'Amount, category, and date are required.' });
+  }
 
-    const query = `INSERT INTO expenses (amount, category, date, note) VALUES (?, ?, ?, ?)`;
-    db.run(query, [amount, category, date, note || ''], function(err) {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        res.status(201).json({
-            id: this.lastID,
-            amount,
-            category,
-            date,
-            note: note || ''
-        });
+  const addedBy = userId ? `User ${userId}` : 'User 1';
+
+  const insertQuery = `
+    INSERT INTO expenses (amount, category, date, note, household_id, added_by) 
+    VALUES (?, ?, ?, ?, ?, ?)
+  `;
+
+  db.run(insertQuery, [amount, category, date, note || '', householdId || null, addedBy], function (err) {
+    if (err) return res.status(500).json({ error: err.message });
+
+    res.status(201).json({
+      id: this.lastID,
+      amount,
+      category,
+      date,
+      note,
+      householdId: householdId || null,
+      addedBy
     });
-});
-
-// 3. UPDATE EXPENSE (PUT)
-router.put('/:id', (req, res) => {
-    const { id } = req.params;
-    const { amount, category, date, note } = req.body;
-
-    const query = `UPDATE expenses SET amount = ?, category = ?, date = ?, note = ? WHERE id = ?`;
-    db.run(query, [amount, category, date, note || '', id], function(err) {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        res.json({ message: "Expense updated successfully.", id });
-    });
-});
-
-// 4. DELETE EXPENSE (DELETE)
-router.delete('/:id', (req, res) => {
-    const { id } = req.params;
-    const query = `DELETE FROM expenses WHERE id = ?`;
-
-    db.run(query, [id], function(err) {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        res.json({ message: "Expense deleted successfully.", id });
-    });
+  });
 });
 
 module.exports = router;
